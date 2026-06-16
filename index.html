@@ -30,15 +30,24 @@
         .custom-card:hover::before {
             width: 4px;
         }
+        /* 5. 하나 걸러 색을 다르게 표현하는 지브라 스타일 */
+        .custom-card:nth-child(even) {
+            background-color: #f8fafc; /* 옅은 푸른빛 도는 회색 */
+        }
+        .custom-card:nth-child(odd) {
+            background-color: #ffffff; /* 흰색 */
+        }
     </style>
 </head>
 <body class="bg-stone-50 text-slate-800 min-h-screen pb-16 text-sm antialiased">
 
-    <header class="bg-slate-900 text-white py-8 px-4 text-center shadow-sm mb-6 border-b border-slate-800 relative">
-        <h1 class="text-2xl md:text-3xl font-serif font-bold tracking-wider mb-2 text-slate-100">My Classical Music Library</h1>
-        <p class="text-slate-400 text-xs font-light tracking-wide">내가 좋아하는 클래식 음악 리스트</p>
+    <header class="bg-slate-900 text-white py-8 px-4 text-center shadow-sm mb-6 border-b border-slate-800 relative flex flex-col items-center justify-center gap-3">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-serif font-bold tracking-wider mb-2 text-slate-100">My Classical Music Library</h1>
+            <p class="text-slate-400 text-xs font-light tracking-wide">내가 좋아하는 클래식 음악 리스트</p>
+        </div>
         
-        <button id="btnAdminAuth" class="absolute top-4 right-4 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition">
+        <button id="btnAdminAuth" class="mt-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition">
             <i class="fas fa-lock mr-1"></i> 관리자 인증
         </button>
     </header>
@@ -47,17 +56,26 @@
         
         <section class="bg-white p-5 rounded-xl shadow-xs border border-stone-200/80 mb-6">
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                        <i class="fas fa-search text-xs"></i>
-                    </span>
-                    <input type="text" id="searchInput" placeholder="작곡가 이름 검색..." class="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-slate-500 focus:bg-white transition text-xs">
+                <div class="flex gap-1.5">
+                    <div class="relative flex-1">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                            <i class="fas fa-user text-xs"></i>
+                        </span>
+                        <input type="text" id="searchInput" placeholder="작곡가 이름 입력..." class="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-slate-500 focus:bg-white transition text-xs">
+                    </div>
+                    <button id="btnSearch" class="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs transition flex-shrink-0">
+                        <i class="fas fa-search"></i> 검색
+                    </button>
                 </div>
-                <select id="categoryFilter" class="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-slate-500 focus:bg-white transition text-xs text-slate-600"></select>
+                
+                <select id="categoryFilter" class="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-slate-500 focus:bg-white transition text-xs text-slate-600">
+                    <option value="전체 장르">전체 장르</option>
+                </select>
+                
                 <select id="sortOrder" class="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-slate-500 focus:bg-white transition text-xs text-slate-600">
                     <option value="default">내가 정한 순서 (기본)</option>
                     <option value="composer">작곡가순</option>
-                    <option value="yearAsc">제작년도순</option>
+                    <option value="yearAsc">작곡년도순</option>
                 </select>
             </div>
             
@@ -77,7 +95,7 @@
             <i class="fas fa-circle-notch fa-spin mr-2 text-slate-500"></i> 아카이브를 불러오는 중입니다...
         </div>
         
-        <section id="libraryGrid" class="grid grid-cols-1 gap-3 hidden">
+        <section id="libraryGrid" class="grid grid-cols-1 gap-2 hidden">
             </section>
     </main>
 
@@ -124,7 +142,7 @@
         import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyC0vb9iYY8Rgt6TJelolyl0QECCjTYZJ0g", // 👈 사용자님의 실제 키값을 넣어주세요! (Public에 노출되어도 Rules가 지켜주므로 안심하셔도 됩니다.)
+            apiKey: "AIzaSyC0vb9iYY8Rgt6TJelolyl0QECCjTYZJ0g", // 👈 실제 사용자님의 파이어베이스 API 키를 넣어주세요.
             authDomain: "classiclibrary-64b1e.firebaseapp.com",
             databaseURL: "https://classiclibrary-64b1e-default-rtdb.firebaseio.com",
             projectId: "classiclibrary-64b1e",
@@ -138,7 +156,8 @@
         const dbRef = ref(database, "classic_library");
 
         let tracks = [];
-        let currentPassword = ""; // 인증 전에는 비어있음
+        let currentPassword = ""; 
+        let activeSearchKeyword = ""; // 검색 버튼 전용 키워드 상태 저장 변수
 
         // 데이터 로드
         onValue(dbRef, (snapshot) => {
@@ -162,7 +181,6 @@
             checkAdminStatus();
         }
 
-        // 관리자 인증 상태에 따른 UI 제어
         function checkAdminStatus() {
             const backupZone = document.getElementById('adminBackupZone');
             const addBtn = document.getElementById('btnAddTrack');
@@ -174,17 +192,16 @@
                 addBtn.classList.remove('hidden');
                 modalAdminBtns.classList.remove('hidden');
                 authBtn.innerHTML = `<i class="fas fa-unlock text-emerald-400 mr-1"></i> 인증 완료`;
-                authBtn.className = "absolute top-4 right-4 px-3 py-1 bg-emerald-950 text-emerald-300 text-xs rounded-md border border-emerald-800 transition";
+                authBtn.className = "mt-1 px-3 py-1 bg-emerald-950 text-emerald-300 text-xs rounded-md border border-emerald-800 transition";
             } else {
                 backupZone.classList.add('hidden');
                 addBtn.classList.add('hidden');
                 modalAdminBtns.classList.add('hidden');
                 authBtn.innerHTML = `<i class="fas fa-lock mr-1"></i> 관리자 인증`;
-                authBtn.className = "absolute top-4 right-4 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition";
+                authBtn.className = "mt-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition";
             }
         }
 
-        // 관리자 인증 버튼 클릭 이벤트
         document.getElementById('btnAdminAuth').addEventListener('click', () => {
             if (currentPassword) {
                 if(confirm("로그아웃 하시겠습니까?")) {
@@ -202,7 +219,6 @@
             }
         });
 
-        // 백업 기능 구현 (classic_library_backup_비밀번호 경로에 저장)
         document.getElementById('btnBackup').addEventListener('click', () => {
             if (!currentPassword) return;
             if (confirm("현재 리스트를 파이어베이스 백업 공간에 저장하시겠습니까?")) {
@@ -213,7 +229,6 @@
             }
         });
 
-        // 복구 기능 구현
         document.getElementById('btnRestore').addEventListener('click', () => {
             if (!currentPassword) return;
             if (confirm("주의! 백업된 데이터로 현재 리스트를 완전히 덮어씁니다. 진행하시겠습니까?")) {
@@ -231,6 +246,7 @@
             }
         });
 
+        // 3. 장르 리스트 생성 및 자동 동기화 로직
         function initFilters() {
             const categories = new Set(['전체 장르']);
             tracks.forEach(t => { if(t && t.category) categories.add(t.category); });
@@ -250,19 +266,20 @@
 
         function render() {
             const grid = document.getElementById('libraryGrid');
-            const searchKeyword = document.getElementById('searchInput').value.toLowerCase();
             const selectedCategory = document.getElementById('categoryFilter').value || '전체 장르';
             const sortOrder = document.getElementById('sortOrder').value;
 
             grid.innerHTML = '';
             let filtered = tracks.filter(t => t !== null && t !== undefined && t.id);
 
-            if (searchKeyword) {
+            // 2. 검색 버튼 혹은 엔터를 쳤을 때 확정된 키워드로 필터링 수행
+            if (activeSearchKeyword) {
                 filtered = filtered.filter(t => 
-                    t.composer && t.composer.toLowerCase().includes(searchKeyword)
+                    t.composer && t.composer.toLowerCase().includes(activeSearchKeyword)
                 );
             }
 
+            // 3. 장르별 분류 필터링 로직 구현
             if (selectedCategory !== '전체 장르') {
                 filtered = filtered.filter(t => t.category === selectedCategory);
             }
@@ -277,18 +294,19 @@
 
             filtered.forEach(track => {
                 const card = document.createElement('div');
-                card.className = "custom-card bg-white p-4.5 rounded-xl border border-stone-200/60 flex items-center justify-between gap-4 min-h-[68px] shadow-2xs cursor-pointer";
+                card.className = "custom-card p-4.5 rounded-xl border border-stone-200/60 flex items-center justify-between gap-4 min-h-[68px] shadow-2xs cursor-pointer";
                 card.onclick = () => openEditModal(track.id);
                 
+                // 6. 작곡년도를 더 진하게(text-slate-700), 크기는 작곡가명과 같게(text-slate-700 스타일 유지 및 크기 일치) 세팅
                 card.innerHTML = `
                     <div class="flex items-center gap-4 min-w-0 flex-1 pl-2">
                         <span class="text-[11px] font-mono font-bold text-slate-400 flex-shrink-0 w-10">No.${String(track.id).padStart(2, '0')}</span>
                         <div class="min-w-0 flex-1">
                             <h3 class="font-bold text-slate-900 text-base leading-tight truncate tracking-tight" title="${track.title}">${track.title}</h3>
-                            <div class="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                            <div class="text-xs mt-1 flex items-center gap-2">
                                 <span class="font-semibold text-slate-700 bg-stone-100 px-1.5 py-0.5 rounded-sm">${track.composer}</span>
                                 <span class="text-stone-300">•</span>
-                                <span class="font-light">${track.year || 0}년 작품</span>
+                                <span class="font-semibold text-slate-700">${track.year || 0}년 작품</span>
                             </div>
                         </div>
                     </div>
@@ -297,6 +315,22 @@
                 grid.appendChild(card);
             });
         }
+
+        // 2. 검색을 작동시키는 공통 함수
+        function handleSearch() {
+            activeSearchKeyword = document.getElementById('searchInput').value.trim().toLowerCase();
+            render();
+        }
+
+        // 검색 버튼 클릭 시
+        document.getElementById('btnSearch').addEventListener('click', handleSearch);
+        
+        // 검색창에서 엔터 키 입력 시
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
 
         function openEditModal(id) {
             const track = tracks.find(t => t && t.id === id);
@@ -313,7 +347,6 @@
             document.getElementById('btnYoutube').href = `https://www.youtube.com/results?search_query=${query}`;
             document.getElementById('btnYoutube').classList.remove('hidden');
 
-            // 관리자 인증이 안 되어 있으면 입력창 수정 불가 처리
             const inputs = ['modalTitleInput', 'modalComposerInput', 'modalYearInput', 'modalCategoryInput'];
             inputs.forEach(id => document.getElementById(id).disabled = !currentPassword);
 
@@ -366,12 +399,13 @@
             document.getElementById('trackModal').classList.add('hidden');
         });
 
-        document.getElementById('searchInput').addEventListener('input', render);
+        // 3. 장르 필터 및 정렬 선택 변경 시 트리거
         document.getElementById('categoryFilter').addEventListener('change', render);
         document.getElementById('sortOrder').addEventListener('change', render);
         
         document.getElementById('btnShowAll').addEventListener('click', () => {
             document.getElementById('searchInput').value = '';
+            activeSearchKeyword = "";
             document.getElementById('categoryFilter').value = '전체 장르';
             document.getElementById('sortOrder').value = 'default';
             render();
