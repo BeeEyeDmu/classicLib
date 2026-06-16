@@ -491,14 +491,16 @@
         onValue(dbRef, (snapshot) => {
             const data = snapshot.val();
             // 파이어베이스에 기존 데이터가 있더라도 id 순번 정렬 체계를 새로 고침하기 위해 초기화 매칭 유도 가능
-            if (data && data.length === initialTracks.length) {
+            //if (data && data.length === initialTracks.length) {
+            if(data) {
                 tracks = data;
             } else {
                 tracks = JSON.parse(JSON.stringify(initialTracks));
                 set(dbRef, tracks);
             }
             render();
-            buildModalTable();
+            //buildModalTable();
+            if (typeof buildModalTable === 'function') buildModalTable();
         });
 
         function saveToFirebase() {
