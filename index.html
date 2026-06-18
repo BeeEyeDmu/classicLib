@@ -11,6 +11,7 @@
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
             position: relative;
             overflow: hidden;
+            background-color: #ffffff !important; /* 기본 카드는 투명하고 깨끗한 화이트 */
         }
         .custom-card::before {
             content: '';
@@ -19,29 +20,29 @@
             top: 0;
             bottom: 0;
             width: 0;
-            background-color: #475569;
+            background-color: #334155;
             transition: width 0.25s ease;
         }
         .custom-card:hover { 
             transform: translateY(-2px); 
-            box-shadow: 0 6px 20px rgba(27, 38, 59, 0.08);
-            border-color: #94a3b8;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+            border-color: #cbd5e1;
         }
         .custom-card:hover::before {
             width: 4px;
         }
         
-        /* 3. 요청하신 카드 배경색 번갈아 다르게 설정 (지브라 패턴 강화) */
+        /* 짝수 카드를 아주 맑고 세련된 애쉬 베이지 그레이로 처리하여 촌스러움 제거 */
         .custom-card:nth-child(even) {
-            background-color: #f4f6f0 !important; /* 아주 은은한 차잎빛(세이지) 미색 */
+            background-color: #f8f9fa !important; 
         }
         .custom-card:nth-child(odd) {
-            background-color: #faf9f5 !important; /* 포근한 린넨 화이트 */
+            background-color: #ffffff !important; 
         }
         
     </style>
 </head>
-<body class="bg-stone-200/70 text-slate-800 min-h-screen pb-16 text-sm antialiased">
+<body class="bg-[#f1f3f5] text-slate-800 min-h-screen pb-16 text-sm antialiased">
 
     <!-- 상단 헤더 -->
     <header class="bg-slate-900 text-white py-8 px-4 text-center shadow-sm mb-6 border-b border-slate-800 relative flex flex-col items-center justify-center gap-3">
@@ -58,7 +59,7 @@
     <main class="max-w-4xl mx-auto px-4">
         
         <!-- 컨트롤러 -->
-        <section class="bg-stone-50 p-5 rounded-xl shadow-sm border border-stone-200/60 mb-6">
+        <section class="bg-white p-6 rounded-2xl shadow-md border border-slate-100 mb-6">
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 <!-- 검색창 -->
                 <div class="flex gap-1.5">
