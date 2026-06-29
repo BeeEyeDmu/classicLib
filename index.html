@@ -90,7 +90,7 @@
         </div>
         
         <section id="libraryGrid" class="grid grid-cols-1 gap-2 hidden">
-            </section>
+        </section>
     </main>
 
     <div id="passwordModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 hidden z-50">
@@ -196,7 +196,6 @@
             try {
                 const data = snapshot.val();
                 if (data) {
-                    // 데이터가 배열이거나 객체인 경우 유연하게 대응하여 데이터 매핑
                     tracks = Array.isArray(data) ? data : Object.values(data);
                 }
             } catch (e) {
@@ -224,7 +223,6 @@
             const deleteTrackBtn = document.getElementById('btnDeleteTrack');
 
             if (currentPassword) {
-                // 관리자 인증 성공 상태 UI 활성화
                 backupZone.classList.remove('hidden');
                 addBtn.classList.remove('hidden');
                 saveModalBtn.classList.remove('hidden');
@@ -232,7 +230,6 @@
                 authBtn.innerHTML = `<i class="fas fa-unlock text-emerald-400 mr-1"></i> 인증 완료`;
                 authBtn.className = "mt-1 px-3 py-1 bg-emerald-950 text-emerald-300 text-xs rounded-md border border-emerald-800 transition";
             } else {
-                // 일반 사용자 모드 UI로 제한 잠금
                 backupZone.classList.add('hidden');
                 addBtn.classList.add('hidden');
                 saveModalBtn.classList.add('hidden');
@@ -267,7 +264,7 @@
             pswdModal.classList.add('hidden');
         });
 
-        // 🔐 [핵심 암호화 로직] 입력 시점에 평문을 해시화하여 파이어베이스와 실시간 검증
+        // 🔐 [최종 수정 반영] 입력된 암호를 암호화하여 로컬에서 즉시 안전 비교 검증
         document.getElementById('btnConfirmPasswordModal').addEventListener('click', () => {
             const enteredPass = pswdInput.value.trim();
             if (!enteredPass) return;
@@ -275,28 +272,25 @@
             pswdError.classList.add('hidden');
             spinner.classList.remove('hidden');
 
-            // 1. 입력된 평문 비밀번호(예: 3100)를 그 자리에서 SHA-256 알고리즘을 사용해 64자리 암호문으로 변환합니다.
+            // 1. 입력된 평문 비밀번호를 SHA-256 해시값으로 변환
             const hashedInput = CryptoJS.SHA256(enteredPass).toString();
+            
+            // 2. 파이어베이스에 보관 중인 타겟 해시값 설정
+            const targetHash = 'da48fca855c79b6f1207e0ff8c8f4955b23d9b439366e51edf59ec3d03833b3';
 
-            // 정정된 최상위 경로 조회
-            const pwdRef = ref(database, "admin_password");
-            get(pwdRef).then((snapshot) => {
+            setTimeout(() => {
                 spinner.classList.add('hidden');
-                // 2. 파이어베이스에 보관된 암호문 해시값과 변환된 값을 비교합니다.
-                if (snapshot.exists() && snapshot.val() === hashedInput) {
-                    currentPassword = enteredPass; // 정상 통과 시 세션 권한 매개변수 확보
+                // 로컬 내부 검증 방식을 통해 파이어베이스 읽기(Read) 권한에 차단되는 문제를 원천 해결
+                if (hashedInput === targetHash) {
+                    currentPassword = enteredPass; 
                     checkAdminStatus();
                     render();
                     pswdModal.classList.add('hidden');
                 } else {
-                    // 일치하지 않으면 경고 라벨 표출
                     pswdError.classList.remove('hidden');
                     pswdInput.select();
                 }
-            }).catch(err => {
-                spinner.classList.add('hidden');
-                alert("인증 오류가 발생했습니다: " + err.message);
-            });
+            }, 300);
         });
 
         pswdInput.addEventListener('keypress', (e) => {
@@ -305,10 +299,9 @@
             }
         });
 
-        // 🔒 데이터베이스 쓰기 규칙 위배를 방지하기 위한 보안 전송 함수
+        // 🔒 [최종 수정 반영] 데이터 저장 시 해시값 주입 처리 함수
         function safeSaveToFirebase(dataArray) {
             const payload = JSON.parse(JSON.stringify(dataArray));
-            // 규칙 검증용 해시값 생성
             const passwordHash = CryptoJS.SHA256(currentPassword).toString();
             
             if (Array.isArray(payload)) {
@@ -321,8 +314,8 @@
             return set(dbRef, payload);
         }
 
-        // 🗄️ 백업 기능 스크립트
-       document.getElementById('btnBackup').addEventListener('click', () => {
+        // 🗄️ [최종 수정 반영] 파이어베이스 백업 스크립트 (해시값 경로 및 주입 반영)
+        document.getElementById('btnBackup').addEventListener('click', () => {
             if (!currentPassword) return;
             if (confirm("현재 리스트를 파이어베이스 백업 공간에 저장하시겠습니까?")) {
                 const passwordHash = CryptoJS.SHA256(currentPassword).toString();
@@ -337,11 +330,12 @@
             }
         });
 
-        // ⏪ 복구 기능 스크립트
+        // ⏪ 백업본에서 복구 기능 스크립트
         document.getElementById('btnRestore').addEventListener('click', () => {
             if (!currentPassword) return;
             if (confirm("주의! 백업된 데이터로 현재 리스트를 완전히 덮어씁니다. 진행하시겠습니까?")) {
-                const backupRef = ref(database, `classic_library_backup_${currentPassword}`);
+                const passwordHash = CryptoJS.SHA256(currentPassword).toString();
+                const backupRef = ref(database, `classic_library_backup_${passwordHash}`);
                 get(backupRef).then((snapshot) => {
                     if (snapshot.exists()) {
                         const backupData = snapshot.val();
@@ -370,7 +364,7 @@
             });
         }
 
-        // 🖥️ [렌더러 함수] 화면에 카드 형태의 리스트를 그려주는 핵심 메인 뷰 핸들러
+        // 🖥️ [렌더러 함수] 화면에 카드 형태의 리스트를 그려주는 메인 핸들러
         function render() {
             const grid = document.getElementById('libraryGrid');
             const selectedCategory = document.getElementById('categoryFilter').value || '전체 장르';
@@ -379,14 +373,12 @@
             grid.innerHTML = '';
             let filtered = tracks.filter(t => t !== null && t !== undefined && t.id);
 
-            // 필터링 규칙 계산
             if (selectedCategory !== '전체 장르') {
                 filtered = filtered.filter(t => t.category === selectedCategory);
             } else if (activeSearchKeyword) {
                 filtered = filtered.filter(t => t.composer && t.composer.toLowerCase().includes(activeSearchKeyword));
             }
 
-            // 정렬 규칙 연산
             if (sortOrder === 'composer') {
                 filtered.sort((a, b) => (a.composer || '').localeCompare(b.composer || '', 'ko'));
             } else if (sortOrder === 'yearAsc') {
@@ -395,7 +387,6 @@
                 filtered.sort((a, b) => a.id - b.id);
             }
 
-            // 루프 돌며 DOM 카드 엘리먼트 생성 및 추가
             filtered.forEach(track => {
                 const card = document.createElement('div');
                 card.className = "custom-card p-4 rounded-xl border border-stone-300/70 flex items-center justify-between gap-3 min-h-[84px] shadow-xs cursor-pointer";
@@ -438,7 +429,7 @@
             render();
         });
 
-        // 🔓 모달 제어: 음악 클릭 시 상세 보기 모달 오픈 함수 (권한 여부에 따라 input박스 자동 비활성화)
+        // 🔓 모달 제어: 음악 클릭 시 상세 보기 모달 오픈 함수
         function openEditModal(id) {
             const track = tracks.find(t => t && t.id === id);
             if (!track) return;
@@ -451,12 +442,10 @@
             document.getElementById('modalCategoryInput').value = track.category || '독주곡';
             document.getElementById('modalMemoInput').value = track.memo || '';
             
-            // 유튜브 자동 링크 쿼리 생성 기믹
             const query = encodeURIComponent(`${track.composer} ${track.title}`);
             document.getElementById('btnYoutube').href = `https://www.youtube.com/results?search_query=${query}`;
             document.getElementById('btnYoutube').classList.remove('hidden');
 
-            // 인증 전이라면 입력 상자들을 전부 읽기 전용(disabled) 상태로 전환하여 보안 유지
             const inputs = ['modalTitleInput', 'modalComposerInput', 'modalYearInput', 'modalCategoryInput', 'modalMemoInput'];
             inputs.forEach(id => document.getElementById(id).disabled = !currentPassword);
 
@@ -468,7 +457,6 @@
         document.getElementById('btnAddTrack').addEventListener('click', () => {
             if (!currentPassword) return;
             const validTracks = tracks.filter(t => t !== null && t !== undefined && t.id);
-            // 빈 공간이나 중복되지 않도록 고유 인덱스 번호 채번
             const nextId = validTracks.length > 0 ? Math.max(...validTracks.map(t => t.id)) + 1 : 1;
 
             document.getElementById('modalTitle').textContent = "새로운 명곡 추가";
@@ -517,7 +505,7 @@
             const title = document.getElementById('modalTitleInput').value;
 
             if (confirm(`[주의] "${title}" 곡을 정말로 삭제하시겠습니까?`)) {
-                tracks[id] = null; // 데이터를 비워 인덱스 정합성 유지
+                tracks[id] = null; 
                 safeSaveToFirebase(tracks).then(() => {
                     alert("성공적으로 삭제되었습니다.");
                     document.getElementById('trackModal').classList.add('hidden');
