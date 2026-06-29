@@ -6,7 +6,11 @@
     <title>My Classical Music Library</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    
     <style>
+        /* 🎵 음악 카드 구성용 사용자 정의 CSS 스타일 애니메이션 효과 */
         .custom-card { 
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
             position: relative;
@@ -16,10 +20,7 @@
         .custom-card::before {
             content: '';
             position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 0;
+            left: 0; top: 0; bottom: 0; width: 0;
             background-color: #334155;
             transition: width 0.25s ease;
         }
@@ -31,6 +32,7 @@
         .custom-card:hover::before {
             width: 4px;
         }
+        /* 가독성을 위해 리스트의 홀수/짝수 행 배경색을 다르게 지정 */
         .custom-card:nth-child(even) { background-color: #f8f9fa !important; }
         .custom-card:nth-child(odd) { background-color: #ffffff !important; }
     </style>
@@ -97,10 +99,13 @@
             <p class="text-xs text-slate-500 mb-4 leading-relaxed">데이터를 수정하려면 지정된 비밀번호를 입력해 주세요.</p>
             <div class="mb-4">
                 <input type="password" id="securePasswordInput" placeholder="비밀번호 입력..." class="w-full px-3 py-2 border border-stone-200 rounded-lg focus:outline-none focus:border-slate-500 text-sm tracking-widest font-mono">
+                <p id="passwordErrorMsg" class="text-rose-600 text-xs mt-1.5 font-bold hidden">❌ 비밀번호가 올바르지 않습니다.</p>
             </div>
             <div class="flex justify-end gap-1.5 text-xs">
                 <button id="btnCancelPasswordModal" class="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-slate-600 font-bold rounded-lg transition">취소</button>
-                <button id="btnConfirmPasswordModal" class="px-3 py-2 bg-slate-800 hover:bg-slate-950 text-white font-bold rounded-lg transition">인증하기</button>
+                <button id="btnConfirmPasswordModal" class="px-3 py-2 bg-slate-800 hover:bg-slate-950 text-white font-bold rounded-lg transition flex items-center gap-1">
+                    <span id="authBtnSpinner" class="hidden"><i class="fas fa-spinner fa-spin"></i></span> 인증하기
+                </button>
             </div>
         </div>
     </div>
@@ -166,7 +171,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        // ⚠️ [주의] 교수님의 기존 파이어베이스 설정을 여기에 그대로 복사해 유지해 주세요!
+        // 파이어베이스 프로젝트 고유 설정값
         const firebaseConfig = {
             apiKey: "AIzaSyC0vb9iYY8Rgt6TJelolyl0QECCjTYZJ0g",
             authDomain: "classiclibrary-64b1e.firebaseapp.com",
@@ -177,35 +182,40 @@
             appId: "1:1019688174542:web:96e1a49f532f1a60be6a32"
         };
 
+        // 데이터베이스 초기화 및 기본 레퍼런스 연결
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
         const dbRef = ref(database, "classic_library");
 
-        let tracks = [];
-        let currentPassword = ""; 
-        let activeSearchKeyword = ""; 
+        let tracks = [];              // 실시간 라이브러리 데이터를 담는 내부 배열
+        let currentPassword = "";     // 현재 세션의 성공한 관리자 비밀번호 평문 보관 변수
+        let activeSearchKeyword = ""; // 현재 작동 중인 검색어 키워드 상태값
 
+        // 🔄 [실시간 수신기] 파이어베이스의 음악 목록 실시간 동기화
         onValue(dbRef, (snapshot) => {
             try {
                 const data = snapshot.val();
                 if (data) {
+                    // 데이터가 배열이거나 객체인 경우 유연하게 대응하여 데이터 매핑
                     tracks = Array.isArray(data) ? data : Object.values(data);
                 }
             } catch (e) {
                 console.error("데이터 로딩 에러:", e);
             } finally {
-                initApp();
+                initApp(); // 데이터 로딩 완결 시 UI 구동
             }
         });
         
+        // 🏁 앱 최초 초기화 및 UI 로딩 처리 함수
         function initApp() {
             document.getElementById('loadingStatus').style.display = 'none';
             document.getElementById('libraryGrid').classList.remove('hidden');
-            initFilters();
-            render();
-            checkAdminStatus();
+            initFilters();       // 상단 장르 필터 채우기
+            render();            // 테이블 화면 그리기
+            checkAdminStatus();  // 권한 제어 검사
         }
 
+        // 🛡️ 관리자 권한 여부에 따라 UI 요소들을 동적으로 잠금/해제하는 제어 장치
         function checkAdminStatus() {
             const backupZone = document.getElementById('adminBackupZone');
             const addBtn = document.getElementById('btnAddTrack');
@@ -214,6 +224,7 @@
             const deleteTrackBtn = document.getElementById('btnDeleteTrack');
 
             if (currentPassword) {
+                // 관리자 인증 성공 상태 UI 활성화
                 backupZone.classList.remove('hidden');
                 addBtn.classList.remove('hidden');
                 saveModalBtn.classList.remove('hidden');
@@ -221,6 +232,7 @@
                 authBtn.innerHTML = `<i class="fas fa-unlock text-emerald-400 mr-1"></i> 인증 완료`;
                 authBtn.className = "mt-1 px-3 py-1 bg-emerald-950 text-emerald-300 text-xs rounded-md border border-emerald-800 transition";
             } else {
+                // 일반 사용자 모드 UI로 제한 잠금
                 backupZone.classList.add('hidden');
                 addBtn.classList.add('hidden');
                 saveModalBtn.classList.add('hidden');
@@ -230,10 +242,12 @@
             }
         }
 
-        // 마스킹 비밀번호 모달 제어 로직
         const pswdModal = document.getElementById('passwordModal');
         const pswdInput = document.getElementById('securePasswordInput');
+        const pswdError = document.getElementById('passwordErrorMsg');
+        const spinner = document.getElementById('authBtnSpinner');
 
+        // 🔒 관리자 인증 버튼 핸들러 (인증 상태이면 로그아웃 유도)
         document.getElementById('btnAdminAuth').addEventListener('click', () => {
             if (currentPassword) {
                 if(confirm("로그아웃 하시겠습니까?")) {
@@ -243,8 +257,8 @@
                 }
                 return;
             }
-            // 모달 열기 및 초기화
             pswdInput.value = "";
+            pswdError.classList.add('hidden');
             pswdModal.classList.remove('hidden');
             pswdInput.focus();
         });
@@ -253,14 +267,35 @@
             pswdModal.classList.add('hidden');
         });
 
+        // 🔐 [핵심 암호화 로직] 입력 시점에 평문을 해시화하여 파이어베이스와 실시간 검증
         document.getElementById('btnConfirmPasswordModal').addEventListener('click', () => {
-            const pass = pswdInput.value.trim();
-            if (pass) {
-                currentPassword = pass;
-                checkAdminStatus();
-                render();
-            }
-            pswdModal.classList.add('hidden');
+            const enteredPass = pswdInput.value.trim();
+            if (!enteredPass) return;
+
+            pswdError.classList.add('hidden');
+            spinner.classList.remove('hidden');
+
+            // 1. 입력된 평문 비밀번호(예: 3100)를 그 자리에서 SHA-256 알고리즘을 사용해 64자리 암호문으로 변환합니다.
+            const hashedInput = CryptoJS.SHA256(enteredPass).toString();
+
+            const pwdRef = ref(database, "admin_password");
+            get(pwdRef).then((snapshot) => {
+                spinner.classList.add('hidden');
+                // 2. 파이어베이스에 보관된 암호문 해시값과 변환된 값을 순수 텍스트 비교합니다. (원본 비밀번호 노출 전면 차단)
+                if (snapshot.exists() && snapshot.val() === hashedInput) {
+                    currentPassword = enteredPass; // 정상 통과 시 세션 권한 매개변수 확보
+                    checkAdminStatus();
+                    render();
+                    pswdModal.classList.add('hidden');
+                } else {
+                    // 일치하지 않으면 모달을 닫지 않고 경고 라벨 표출 및 재입력 유도
+                    pswdError.classList.remove('hidden');
+                    pswdInput.select();
+                }
+            }).catch(err => {
+                spinner.classList.add('hidden');
+                alert("인증 오류가 발생했습니다: " + err.message);
+            });
         });
 
         pswdInput.addEventListener('keypress', (e) => {
@@ -269,6 +304,7 @@
             }
         });
 
+        // 🔒 데이터베이스 쓰기 규칙 위배를 방지하기 위한 보안 전송 함수
         function safeSaveToFirebase(dataArray) {
             const payload = JSON.parse(JSON.stringify(dataArray));
             if (Array.isArray(payload)) {
@@ -281,6 +317,7 @@
             return set(dbRef, payload);
         }
 
+        // 🗄️ 백업 기능 스크립트
         document.getElementById('btnBackup').addEventListener('click', () => {
             if (!currentPassword) return;
             if (confirm("현재 리스트를 파이어베이스 백업 공간에 저장하시겠습니까?")) {
@@ -291,10 +328,11 @@
                 }
                 set(backupRef, payload)
                     .then(() => alert("성공적으로 백업되었습니다."))
-                    .catch(err => alert("백업 실패 (비밀번호 규칙 불일치): " + err.message));
+                    .catch(err => alert("백업 실패: " + err.message));
             }
         });
 
+        // ⏪ 복구 기능 스크립트
         document.getElementById('btnRestore').addEventListener('click', () => {
             if (!currentPassword) return;
             if (confirm("주의! 백업된 데이터로 현재 리스트를 완전히 덮어씁니다. 진행하시겠습니까?")) {
@@ -312,6 +350,7 @@
             }
         });
 
+        // 📂 데이터 기반으로 상단 장르 필터링 셀렉트박스를 채우는 함수
         function initFilters() {
             const categories = new Set(['전체 장르']);
             tracks.forEach(t => { if(t && t.category) categories.add(t.category); });
@@ -326,6 +365,7 @@
             });
         }
 
+        // 🖥️ [렌더러 함수] 화면에 카드 형태의 리스트를 그려주는 핵심 메인 뷰 핸들러
         function render() {
             const grid = document.getElementById('libraryGrid');
             const selectedCategory = document.getElementById('categoryFilter').value || '전체 장르';
@@ -334,12 +374,14 @@
             grid.innerHTML = '';
             let filtered = tracks.filter(t => t !== null && t !== undefined && t.id);
 
+            // 필터링 규칙 계산
             if (selectedCategory !== '전체 장르') {
                 filtered = filtered.filter(t => t.category === selectedCategory);
             } else if (activeSearchKeyword) {
                 filtered = filtered.filter(t => t.composer && t.composer.toLowerCase().includes(activeSearchKeyword));
             }
 
+            // 정렬 규칙 연산
             if (sortOrder === 'composer') {
                 filtered.sort((a, b) => (a.composer || '').localeCompare(b.composer || '', 'ko'));
             } else if (sortOrder === 'yearAsc') {
@@ -348,6 +390,7 @@
                 filtered.sort((a, b) => a.id - b.id);
             }
 
+            // 루프 돌며 DOM 카드 엘리먼트 생성 및 추가
             filtered.forEach(track => {
                 const card = document.createElement('div');
                 card.className = "custom-card p-4 rounded-xl border border-stone-300/70 flex items-center justify-between gap-3 min-h-[84px] shadow-xs cursor-pointer";
@@ -370,6 +413,7 @@
             });
         }
 
+        // 🔍 검색 버튼 클릭 및 엔터 키 입력 리스너
         document.getElementById('btnSearch').addEventListener('click', () => {
             document.getElementById('categoryFilter').value = '전체 장르';
             activeSearchKeyword = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -389,6 +433,7 @@
             render();
         });
 
+        // 🔓 모달 제어: 음악 클릭 시 상세 보기 모달 오픈 함수 (권한 여부에 따라 input박스 자동 비활성화)
         function openEditModal(id) {
             const track = tracks.find(t => t && t.id === id);
             if (!track) return;
@@ -401,10 +446,12 @@
             document.getElementById('modalCategoryInput').value = track.category || '독주곡';
             document.getElementById('modalMemoInput').value = track.memo || '';
             
+            // 유튜브 자동 링크 쿼리 생성 기믹
             const query = encodeURIComponent(`${track.composer} ${track.title}`);
             document.getElementById('btnYoutube').href = `https://www.youtube.com/results?search_query=${query}`;
             document.getElementById('btnYoutube').classList.remove('hidden');
 
+            // 인증 전이라면 입력 상자들을 전부 읽기 전용(disabled) 상태로 전환하여 보안 유지
             const inputs = ['modalTitleInput', 'modalComposerInput', 'modalYearInput', 'modalCategoryInput', 'modalMemoInput'];
             inputs.forEach(id => document.getElementById(id).disabled = !currentPassword);
 
@@ -412,9 +459,11 @@
             document.getElementById('trackModal').classList.remove('hidden');
         }
 
+        // ➕ 신규 곡 등록용 모달 초기화 스크립트
         document.getElementById('btnAddTrack').addEventListener('click', () => {
             if (!currentPassword) return;
             const validTracks = tracks.filter(t => t !== null && t !== undefined && t.id);
+            // 빈 공간이나 중복되지 않도록 고유 인덱스 번호 채번
             const nextId = validTracks.length > 0 ? Math.max(...validTracks.map(t => t.id)) + 1 : 1;
 
             document.getElementById('modalTitle').textContent = "새로운 명곡 추가";
@@ -433,6 +482,7 @@
             document.getElementById('trackModal').classList.remove('hidden');
         });
 
+        // 💾 곡 정보 추가 및 수정사항 파이어베이스 반영 핸들러
         document.getElementById('btnSaveModal').addEventListener('click', () => {
             if (!currentPassword) return;
 
@@ -452,16 +502,17 @@
 
             safeSaveToFirebase(tracks).then(() => {
                 document.getElementById('trackModal').classList.add('hidden');
-            }).catch(err => alert("저장 실패 (비밀번호를 확인하세요): " + err.message));
+            }).catch(err => alert("저장 실패: " + err.message));
         });
 
+        // ❌ 곡 삭제 로직 처리
         document.getElementById('btnDeleteTrack').addEventListener('click', () => {
             if (!currentPassword) return;
             const id = parseInt(document.getElementById('modalTrackId').value);
             const title = document.getElementById('modalTitleInput').value;
 
             if (confirm(`[주의] "${title}" 곡을 정말로 삭제하시겠습니까?`)) {
-                tracks[id] = null; 
+                tracks[id] = null; // 데이터를 비워 인덱스 정합성 유지
                 safeSaveToFirebase(tracks).then(() => {
                     alert("성공적으로 삭제되었습니다.");
                     document.getElementById('trackModal').classList.add('hidden');
@@ -474,6 +525,8 @@
         });
 
         document.getElementById('sortOrder').addEventListener('change', render);
+        
+        // 🔄 전체보기 버튼 리셋 기능 구현
         document.getElementById('btnShowAll').addEventListener('click', () => {
             document.getElementById('searchInput').value = ''; activeSearchKeyword = "";
             document.getElementById('categoryFilter').value = '전체 장르';
