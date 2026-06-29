@@ -7,10 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    
     <style>
-        /* 🎵 음악 카드 구성용 사용자 정의 CSS 스타일 애니메이션 효과 */
+        /* 🎵 음악 카드 구성용 CSS 스타일 및 애니메이션 */
         .custom-card { 
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
             position: relative;
@@ -32,7 +30,6 @@
         .custom-card:hover::before {
             width: 4px;
         }
-        /* 가독성을 위해 리스트의 홀수/짝수 행 배경색을 다르게 지정 */
         .custom-card:nth-child(even) { background-color: #f8f9fa !important; }
         .custom-card:nth-child(odd) { background-color: #ffffff !important; }
     </style>
@@ -184,16 +181,15 @@
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
         
-        // 🎯 [핵심 수정] 데이터가 최상위 노드의 'classic_library' 하위에 있으므로 타겟 레퍼런스를 분리 지정합니다.
-        const rootRef = ref(database); 
-        const libraryDataRef = ref(database, "classic_library");
+        // 🔄 [원점 복원] 헷갈리던 최상위 접근을 버리고, 기존에 리스트를 완벽히 띄워주던 고유 경로로 직행합니다.
+        const dbRef = ref(database, "classic_library");
 
         let tracks = [];              
         let currentPassword = "";     
         let activeSearchKeyword = ""; 
 
-        // 🔄 [실시간 데이터 매핑 수정] 데이터베이스에서 음악 노드('classic_library')만 정확히 구독
-        onValue(libraryDataRef, (snapshot) => {
+        // 🔄 [실시간 수신기 복원]
+        onValue(dbRef, (snapshot) => {
             try {
                 const data = snapshot.val();
                 if (data) {
@@ -223,7 +219,7 @@
             const authBtn = document.getElementById('btnAdminAuth');
             const deleteTrackBtn = document.getElementById('btnDeleteTrack');
 
-            if (currentPassword) {
+            if (currentPassword === "3100") {
                 backupZone.classList.remove('hidden');
                 addBtn.classList.remove('hidden');
                 saveModalBtn.classList.remove('hidden');
@@ -264,7 +260,7 @@
             pswdModal.classList.add('hidden');
         });
 
-        // 🔐 [안전한 직접 비교] 문법 에러를 없애고 세션 패스워드만 가볍게 동기화합니다.
+        // 🔑 [원점 복원] 암호화 라이브러리 없이 단순 평문 직관 비교
         document.getElementById('btnConfirmPasswordModal').addEventListener('click', () => {
             const enteredPass = pswdInput.value.trim();
             if (!enteredPass) return;
@@ -293,30 +289,18 @@
             }
         });
 
-        // 🔒 [파이어베이스 보안 규칙 우회 방지용 세이프 저장 함수]
+        // 🔒 [원점 복원] 복잡한 규칙 주입 없이 원본 그대로 파이어베이스에 저장하는 방식
         function safeSaveToFirebase(dataArray) {
             const payload = JSON.parse(JSON.stringify(dataArray));
-            const passwordHash = CryptoJS.SHA256(currentPassword).toString();
-            
-            if (Array.isArray(payload)) {
-                payload.forEach(item => {
-                    if (item) item.admin_password = passwordHash;
-                });
-            }
-            // 전체를 루트 아래 'classic_library'에 덮어씌웁니다.
-            return set(libraryDataRef, payload);
+            return set(dbRef, payload);
         }
 
         // 🗄️ 백업 기능 스크립트
         document.getElementById('btnBackup').addEventListener('click', () => {
-            if (!currentPassword) return;
+            if (currentPassword !== "3100") return;
             if (confirm("현재 리스트를 파이어베이스 백업 공간에 저장하시겠습니까?")) {
-                const passwordHash = CryptoJS.SHA256(currentPassword).toString();
-                const backupRef = ref(database, `classic_library_backup_${passwordHash}`);
+                const backupRef = ref(database, "classic_library_backup_3100");
                 const payload = JSON.parse(JSON.stringify(tracks));
-                if(Array.isArray(payload)) {
-                    payload.forEach(item => { if(item) item.admin_password = passwordHash; });
-                }
                 set(backupRef, payload)
                     .then(() => alert("성공적으로 백업되었습니다."))
                     .catch(err => alert("백업 실패: " + err.message));
@@ -325,10 +309,9 @@
 
         // ⏪ 백업본에서 복구 기능 스크립트
         document.getElementById('btnRestore').addEventListener('click', () => {
-            if (!currentPassword) return;
+            if (currentPassword !== "3100") return;
             if (confirm("주의! 백업된 데이터로 현재 리스트를 완전히 덮어씁니다. 진행하시겠습니까?")) {
-                const passwordHash = CryptoJS.SHA256(currentPassword).toString();
-                const backupRef = ref(database, `classic_library_backup_${passwordHash}`);
+                const backupRef = ref(database, "classic_library_backup_3100");
                 get(backupRef).then((snapshot) => {
                     if (snapshot.exists()) {
                         const backupData = snapshot.val();
@@ -414,4 +397,103 @@
         });
         document.getElementById('categoryFilter').addEventListener('change', () => {
             if (document.getElementById('categoryFilter').value !== '전체 장르') {
-                document.getElementById('searchInput').value = ''; activeSearchKeyword =
+                document.getElementById('searchInput').value = ''; activeSearchKeyword = "";
+            }
+            render();
+        });
+
+        function openEditModal(id) {
+            const track = tracks.find(t => t && t.id === id);
+            if (!track) return;
+
+            document.getElementById('modalTitle').textContent = "곡 정보 확인";
+            document.getElementById('modalTrackId').value = track.id;
+            document.getElementById('modalTitleInput').value = track.title || '';
+            document.getElementById('modalComposerInput').value = track.composer || '';
+            document.getElementById('modalYearInput').value = track.year || '';
+            document.getElementById('modalCategoryInput').value = track.category || '독주곡';
+            document.getElementById('modalMemoInput').value = track.memo || '';
+            
+            const query = encodeURIComponent(`${track.composer} ${track.title}`);
+            document.getElementById('btnYoutube').href = `https://www.youtube.com/results?search_query=${query}`;
+            document.getElementById('btnYoutube').classList.remove('hidden');
+
+            const inputs = ['modalTitleInput', 'modalComposerInput', 'modalYearInput', 'modalCategoryInput', 'modalMemoInput'];
+            inputs.forEach(id => document.getElementById(id).disabled = (currentPassword !== "3100"));
+
+            checkAdminStatus();
+            document.getElementById('trackModal').classList.remove('hidden');
+        }
+
+        document.getElementById('btnAddTrack').addEventListener('click', () => {
+            if (currentPassword !== "3100") return;
+            const validTracks = tracks.filter(t => t !== null && t !== undefined && t.id);
+            const nextId = validTracks.length > 0 ? Math.max(...validTracks.map(t => t.id)) + 1 : 1;
+
+            document.getElementById('modalTitle').textContent = "새로운 명곡 추가";
+            document.getElementById('modalTrackId').value = nextId;
+            document.getElementById('modalTitleInput').value = "";
+            document.getElementById('modalComposerInput').value = "";
+            document.getElementById('modalYearInput').value = new Date().getFullYear();
+            document.getElementById('modalCategoryInput').value = "클래식 기타"; 
+            document.getElementById('modalMemoInput').value = "";
+            
+            const inputs = ['modalTitleInput', 'modalComposerInput', 'modalYearInput', 'modalCategoryInput', 'modalMemoInput'];
+            inputs.forEach(id => document.getElementById(id).disabled = false);
+
+            document.getElementById('btnYoutube').classList.add('hidden');
+            document.getElementById('btnDeleteTrack').classList.add('hidden');
+            document.getElementById('trackModal').classList.remove('hidden');
+        });
+
+        document.getElementById('btnSaveModal').addEventListener('click', () => {
+            if (currentPassword !== "3100") return;
+
+            const id = parseInt(document.getElementById('modalTrackId').value);
+            const title = document.getElementById('modalTitleInput').value.trim();
+            const composer = document.getElementById('modalComposerInput').value.trim();
+            const year = parseInt(document.getElementById('modalYearInput').value) || 0;
+            const category = document.getElementById('modalCategoryInput').value;
+            const memo = document.getElementById('modalMemoInput').value.trim();
+
+            if (!title || !composer) {
+                alert("작품명과 작곡가는 필수 입력 사항입니다.");
+                return;
+            }
+
+            tracks[id] = { id, title, composer, year, category, memo };
+
+            safeSaveToFirebase(tracks).then(() => {
+                document.getElementById('trackModal').classList.add('hidden');
+            }).catch(err => alert("저장 실패: " + err.message));
+        });
+
+        document.getElementById('btnDeleteTrack').addEventListener('click', () => {
+            if (currentPassword !== "3100") return;
+            const id = parseInt(document.getElementById('modalTrackId').value);
+            const title = document.getElementById('modalTitleInput').value;
+
+            if (confirm(`[주의] "${title}" 곡을 정말로 삭제하시겠습니까?`)) {
+                tracks[id] = null; 
+                safeSaveToFirebase(tracks).then(() => {
+                    alert("성공적으로 삭제되었습니다.");
+                    document.getElementById('trackModal').classList.add('hidden');
+                }).catch(err => alert("삭제 실패: " + err.message));
+            }
+        });
+
+        document.getElementById('btnCancelModal').addEventListener('click', () => {
+            document.getElementById('trackModal').classList.add('hidden');
+        });
+
+        document.getElementById('sortOrder').addEventListener('change', render);
+        
+        document.getElementById('btnShowAll').addEventListener('click', () => {
+            document.getElementById('searchInput').value = ''; activeSearchKeyword = "";
+            document.getElementById('categoryFilter').value = '전체 장르';
+            document.getElementById('sortOrder').value = 'default';
+            render();
+        });
+    </script>
+</body>
+</html>
