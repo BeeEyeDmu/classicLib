@@ -171,7 +171,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        // 파이어베이스 프로젝트 고유 설정값 (beeeyedmu 계정 / classicLibrary 프로젝트)
         const firebaseConfig = {
             apiKey: "AIzaSyC0vb9iYY8Rgt6TJelolyl0QECCjTYZJ0g",
             authDomain: "classiclibrary-64b1e.firebaseapp.com",
@@ -182,9 +181,237 @@
             appId: "1:1019688174542:web:96e1a49f532f1a60be6a32"
         };
 
-        // 데이터베이스 초기화 및 기본 레퍼런스 연결
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
-        const dbRef = ref(database, "classic_library"); // 데이터베이스 최상위 루트 경로
+        
+        // 🎯 [핵심 수정] 데이터가 최상위 노드의 'classic_library' 하위에 있으므로 타겟 레퍼런스를 분리 지정합니다.
+        const rootRef = ref(database); 
+        const libraryDataRef = ref(database, "classic_library");
 
-        let tracks = [];              // 실시간 라이
+        let tracks = [];              
+        let currentPassword = "";     
+        let activeSearchKeyword = ""; 
+
+        // 🔄 [실시간 데이터 매핑 수정] 데이터베이스에서 음악 노드('classic_library')만 정확히 구독
+        onValue(libraryDataRef, (snapshot) => {
+            try {
+                const data = snapshot.val();
+                if (data) {
+                    tracks = Array.isArray(data) ? data : Object.values(data);
+                } else {
+                    tracks = [];
+                }
+            } catch (e) {
+                console.error("데이터 로딩 에러:", e);
+            } finally {
+                initApp(); 
+            }
+        });
+        
+        function initApp() {
+            document.getElementById('loadingStatus').style.display = 'none';
+            document.getElementById('libraryGrid').classList.remove('hidden');
+            initFilters();       
+            render();            
+            checkAdminStatus();  
+        }
+
+        function checkAdminStatus() {
+            const backupZone = document.getElementById('adminBackupZone');
+            const addBtn = document.getElementById('btnAddTrack');
+            const saveModalBtn = document.getElementById('btnSaveModal');
+            const authBtn = document.getElementById('btnAdminAuth');
+            const deleteTrackBtn = document.getElementById('btnDeleteTrack');
+
+            if (currentPassword) {
+                backupZone.classList.remove('hidden');
+                addBtn.classList.remove('hidden');
+                saveModalBtn.classList.remove('hidden');
+                deleteTrackBtn.classList.remove('hidden');
+                authBtn.innerHTML = `<i class="fas fa-unlock text-emerald-400 mr-1"></i> 인증 완료`;
+                authBtn.className = "mt-1 px-3 py-1 bg-emerald-950 text-emerald-300 text-xs rounded-md border border-emerald-800 transition";
+            } else {
+                backupZone.classList.add('hidden');
+                addBtn.classList.add('hidden');
+                saveModalBtn.classList.add('hidden');
+                deleteTrackBtn.classList.add('hidden');
+                authBtn.innerHTML = `<i class="fas fa-lock mr-1"></i> 관리자 인증`;
+                authBtn.className = "mt-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition";
+            }
+        }
+
+        const pswdModal = document.getElementById('passwordModal');
+        const pswdInput = document.getElementById('securePasswordInput');
+        const pswdError = document.getElementById('passwordErrorMsg');
+        const spinner = document.getElementById('authBtnSpinner');
+
+        document.getElementById('btnAdminAuth').addEventListener('click', () => {
+            if (currentPassword) {
+                if(confirm("로그아웃 하시겠습니까?")) {
+                    currentPassword = "";
+                    checkAdminStatus();
+                    render();
+                }
+                return;
+            }
+            pswdInput.value = "";
+            pswdError.classList.add('hidden');
+            pswdModal.classList.remove('hidden');
+            pswdInput.focus();
+        });
+
+        document.getElementById('btnCancelPasswordModal').addEventListener('click', () => {
+            pswdModal.classList.add('hidden');
+        });
+
+        // 🔐 [안전한 직접 비교] 문법 에러를 없애고 세션 패스워드만 가볍게 동기화합니다.
+        document.getElementById('btnConfirmPasswordModal').addEventListener('click', () => {
+            const enteredPass = pswdInput.value.trim();
+            if (!enteredPass) return;
+
+            pswdError.classList.add('hidden');
+            spinner.classList.remove('hidden');
+
+            setTimeout(() => {
+                spinner.classList.add('hidden');
+                
+                if (enteredPass === "3100") {
+                    currentPassword = enteredPass; 
+                    checkAdminStatus();
+                    render();
+                    pswdModal.classList.add('hidden');
+                } else {
+                    pswdError.classList.remove('hidden');
+                    pswdInput.select();
+                }
+            }, 300);
+        });
+
+        pswdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('btnConfirmPasswordModal').click();
+            }
+        });
+
+        // 🔒 [파이어베이스 보안 규칙 우회 방지용 세이프 저장 함수]
+        function safeSaveToFirebase(dataArray) {
+            const payload = JSON.parse(JSON.stringify(dataArray));
+            const passwordHash = CryptoJS.SHA256(currentPassword).toString();
+            
+            if (Array.isArray(payload)) {
+                payload.forEach(item => {
+                    if (item) item.admin_password = passwordHash;
+                });
+            }
+            // 전체를 루트 아래 'classic_library'에 덮어씌웁니다.
+            return set(libraryDataRef, payload);
+        }
+
+        // 🗄️ 백업 기능 스크립트
+        document.getElementById('btnBackup').addEventListener('click', () => {
+            if (!currentPassword) return;
+            if (confirm("현재 리스트를 파이어베이스 백업 공간에 저장하시겠습니까?")) {
+                const passwordHash = CryptoJS.SHA256(currentPassword).toString();
+                const backupRef = ref(database, `classic_library_backup_${passwordHash}`);
+                const payload = JSON.parse(JSON.stringify(tracks));
+                if(Array.isArray(payload)) {
+                    payload.forEach(item => { if(item) item.admin_password = passwordHash; });
+                }
+                set(backupRef, payload)
+                    .then(() => alert("성공적으로 백업되었습니다."))
+                    .catch(err => alert("백업 실패: " + err.message));
+            }
+        });
+
+        // ⏪ 백업본에서 복구 기능 스크립트
+        document.getElementById('btnRestore').addEventListener('click', () => {
+            if (!currentPassword) return;
+            if (confirm("주의! 백업된 데이터로 현재 리스트를 완전히 덮어씁니다. 진행하시겠습니까?")) {
+                const passwordHash = CryptoJS.SHA256(currentPassword).toString();
+                const backupRef = ref(database, `classic_library_backup_${passwordHash}`);
+                get(backupRef).then((snapshot) => {
+                    if (snapshot.exists()) {
+                        const backupData = snapshot.val();
+                        safeSaveToFirebase(backupData)
+                            .then(() => alert("백업 데이터로부터 성공적으로 복구되었습니다."))
+                            .catch(err => alert("복구 실패: " + err.message));
+                    } else {
+                        alert("저장된 백업 데이터가 존재하지 않습니다.");
+                    }
+                }).catch(err => alert("데이터를 불러오지 못했습니다: " + err.message));
+            }
+        });
+
+        function initFilters() {
+            const categories = new Set(['전체 장르']);
+            tracks.forEach(t => { if(t && t.category) categories.add(t.category); });
+            const filterSelect = document.getElementById('categoryFilter');
+            const currentSelection = filterSelect.value || '전체 장르';
+            filterSelect.innerHTML = '';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat; opt.textContent = cat;
+                if(cat === currentSelection) opt.selected = true;
+                filterSelect.appendChild(opt);
+            });
+        }
+
+        function render() {
+            const grid = document.getElementById('libraryGrid');
+            const selectedCategory = document.getElementById('categoryFilter').value || '전체 장르';
+            const sortOrder = document.getElementById('sortOrder').value;
+
+            grid.innerHTML = '';
+            let filtered = tracks.filter(t => t !== null && t !== undefined && t.id);
+
+            if (selectedCategory !== '전체 장르') {
+                filtered = filtered.filter(t => t.category === selectedCategory);
+            } else if (activeSearchKeyword) {
+                filtered = filtered.filter(t => t.composer && t.composer.toLowerCase().includes(activeSearchKeyword));
+            }
+
+            if (sortOrder === 'composer') {
+                filtered.sort((a, b) => (a.composer || '').localeCompare(b.composer || '', 'ko'));
+            } else if (sortOrder === 'yearAsc') {
+                filtered.sort((a, b) => (a.year || 0) - (b.year || 0));
+            } else {
+                filtered.sort((a, b) => a.id - b.id);
+            }
+
+            filtered.forEach(track => {
+                const card = document.createElement('div');
+                card.className = "custom-card p-4 rounded-xl border border-stone-300/70 flex items-center justify-between gap-3 min-h-[84px] shadow-xs cursor-pointer";
+                card.onclick = () => openEditModal(track.id);
+                card.innerHTML = `
+                    <div class="flex items-start gap-1 min-w-0 flex-1">
+                        <span class="text-xs font-mono font-bold text-slate-400 flex-shrink-0 w-14 pt-1.5">No.${String(track.id).padStart(2, '0')}</span>
+                        <div class="min-w-0 flex-1 flex flex-col items-start gap-1 pl-1">
+                            <div class="text-sm flex items-center gap-2 flex-wrap">
+                                <span class="font-extrabold text-slate-900">${track.composer}</span>
+                                <span class="text-slate-400 font-light text-xs">|</span>
+                                <span class="text-slate-500 font-medium">${track.year || 0}년 작품</span>
+                            </div>
+                            <h3 class="font-bold text-slate-900 text-lg leading-snug tracking-tight text-left truncate w-full" title="${track.title}">${track.title}</h3>
+                        </div>
+                    </div>
+                    <span class="text-xs font-semibold text-indigo-700 bg-indigo-50/90 border border-indigo-100 px-2.5 py-1 rounded-full flex-shrink-0">${track.category || '기타'}</span>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        document.getElementById('btnSearch').addEventListener('click', () => {
+            document.getElementById('categoryFilter').value = '전체 장르';
+            activeSearchKeyword = document.getElementById('searchInput').value.trim().toLowerCase();
+            render();
+        });
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('categoryFilter').value = '전체 장르';
+                activeSearchKeyword = document.getElementById('searchInput').value.trim().toLowerCase();
+                render();
+            }
+        });
+        document.getElementById('categoryFilter').addEventListener('change', () => {
+            if (document.getElementById('categoryFilter').value !== '전체 장르') {
+                document.getElementById('searchInput').value = ''; activeSearchKeyword =
